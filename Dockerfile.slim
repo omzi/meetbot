@@ -36,9 +36,9 @@ RUN apt-get update \
        > /etc/apt/sources.list.d/google-chrome.list \
   && apt-get update \
   && apt-get install -y --no-install-recommends google-chrome-stable \
-  && apt-get purge -y wget gnupg \
-  && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/*
+# Do not purge wget/gnupg to save space: google-chrome-stable depends on wget,
+# so purging it removes Chrome too (and autoremove then strips Chrome's libs).
 
 RUN groupadd -g 1001 nodejs \
   && useradd -m -d /home/nodejs -r -u 1001 -g nodejs nodejs
