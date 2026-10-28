@@ -1,6 +1,6 @@
 name: Build slim image
 
-# Fork-only: builds Dockerfile.slim and pushes ghcr.io/<owner>/meeting-bot-slim.
+# Fork-only: builds Dockerfile.slim and pushes ghcr.io/<owner>/meeting-bot.
 on:
   push:
     branches: [slim-image]
@@ -25,7 +25,7 @@ jobs:
 
       - name: Image name
         run: |
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/meeting-bot-slim"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/meeting-bot"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
           echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
 
