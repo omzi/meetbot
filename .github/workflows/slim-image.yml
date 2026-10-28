@@ -1,0 +1,62 @@
+name: Build slim image
+
+# Fork-only: builds Dockerfile.slim and pushes ghcr.io/<owner>/meeting-bot-slim.
+on:
+  push:
+    branches: [slim-image]
+    paths:
+      - Dockerfile.slim
+      - .github/workflows/slim-image.yml
+      - package.json
+      - package-lock.json
+      - src/**
+      - xvfb-run-wrapper
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Image name
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/meeting-bot-slim"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: |
+          docker build -f Dockerfile.slim \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            -t "$IMAGE:latest" -t "$IMAGE:$SHORT_SHA" .
+
+      - name: Smoke test
+        run: |
+          set -e
+          run() { docker run --rm --entrypoint sh "$IMAGE:latest" -c "$1"; }
+          run 'google-chrome --version'
+          run 'ffmpeg -version | head -1; Xvfb -help 2>&1 | head -1 || true; pactl --version | head -1; pgrep --version | head -1'
+          run 'node -e "require(\"playwright\"); require(\"puppeteer-extra-plugin-stealth\"); console.log(\"node deps load\")"'
+          run 'test -f dist/index.js && echo "dist/index.js present"'
+          # none of the unused browsers may be in the image
+          if run 'ls -d /root/.cache/ms-playwright /home/nodejs/.cache/ms-playwright /home/nodejs/.cache/puppeteer /root/.cache/puppeteer 2>/dev/null' | grep -q .; then
+            echo "unexpected bundled browsers found"; exit 1
+          fi
+          echo "no Playwright/Puppeteer browser downloads in image"
+
+      - name: Size
+        run: |
+          docker image ls "$IMAGE:latest" --format 'Uncompressed size: {{.Size}}' | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Push
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE:latest"
+          docker push "$IMAGE:$SHORT_SHA"
+          echo "Pushed $IMAGE:latest and :$SHORT_SHA" | tee -a "$GITHUB_STEP_SUMMARY"

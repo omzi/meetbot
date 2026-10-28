@@ -1,0 +1,67 @@
+# Slim production image (amd64).
+#
+# The bot only ever launches Google Chrome: every chromium.launch* call passes
+# executablePath: config.chromeExecutablePath (CHROME_PATH, default
+# /usr/bin/google-chrome). Dockerfile.production also installs Playwright's
+# Chromium, Firefox and WebKit (twice: as root and as nodejs) and Puppeteer's
+# own Chrome, none of which are launched, on the full node:20 base with dev
+# dependencies kept. That comes to ~7.6 GB. This image installs Chrome only.
+
+FROM node:20-slim AS build
+WORKDIR /usr/src/app
+ENV PUPPETEER_SKIP_DOWNLOAD=1 \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build \
+  && npm prune --omit=dev \
+  && npm cache clean --force
+
+FROM node:20-slim
+WORKDIR /usr/src/app
+ENV NODE_ENV=production \
+    PUPPETEER_SKIP_DOWNLOAD=1 \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
+# Chrome, plus what xvfb-run-wrapper and the ffmpeg recorder need:
+# Xvfb (display), PulseAudio + pactl (virtual audio sink), ffmpeg, pgrep (procps).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+       ca-certificates wget gnupg \
+       ffmpeg pulseaudio pulseaudio-utils xvfb procps fonts-liberation \
+  && wget -q -O - https://dl.google.com/linux/linux_signing_key.pub \
+       | gpg --dearmor -o /usr/share/keyrings/google-linux-signing-key.gpg \
+  && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux-signing-key.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
+       > /etc/apt/sources.list.d/google-chrome.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends google-chrome-stable \
+  && apt-get purge -y wget gnupg \
+  && apt-get autoremove -y \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g 1001 nodejs \
+  && useradd -m -d /home/nodejs -r -u 1001 -g nodejs nodejs
+
+# Chrome policy to allow protocol launching
+RUN mkdir -p /etc/opt/chrome/policies/managed
+COPY auto_launch_protocols.json /etc/opt/chrome/policies/managed/auto_launch_protocols.json
+
+COPY --from=build --chown=nodejs:nodejs /usr/src/app /usr/src/app
+
+RUN sed -i 's/\r$//' /usr/src/app/xvfb-run-wrapper \
+  && chmod +x /usr/src/app/xvfb-run-wrapper \
+  && mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix \
+  && mkdir -p /usr/src/app/dist/_tempvideo && chmod -R 777 /usr/src/app/dist/_tempvideo \
+  && mkdir -p /run/user/1001 && chown -R nodejs:nodejs /run/user/1001 && chmod 700 /run/user/1001 \
+  && mkdir -p /home/nodejs/.config/pulse && chown -R nodejs:nodejs /home/nodejs/.config
+
+USER nodejs
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })" || exit 1
+
+ENTRYPOINT ["/usr/src/app/xvfb-run-wrapper"]
+CMD ["node", "dist/index.js"]
