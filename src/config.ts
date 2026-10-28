@@ -84,6 +84,8 @@ export default {
   teamsAudioStabilizationMs: process.env.TEAMS_AUDIO_STABILIZATION_MS ? Number(process.env.TEAMS_AUDIO_STABILIZATION_MS) : 1000,
   miscStorageBucket: process.env.GCP_MISC_BUCKET,
   miscStorageFolder: process.env.GCP_MISC_BUCKET_FOLDER ? process.env.GCP_MISC_BUCKET_FOLDER : 'meeting-bot',
+  // Top-level folder of the recording object key: <prefix>/<userId>/<file>
+  uploadKeyPrefix: process.env.UPLOAD_KEY_PREFIX ? process.env.UPLOAD_KEY_PREFIX : 'meeting-bot',
   region: process.env.GCP_DEFAULT_REGION,
   accessKey: process.env.GCP_ACCESS_KEY_ID ?? '',
   accessSecret: process.env.GCP_SECRET_ACCESS_KEY ?? '',
